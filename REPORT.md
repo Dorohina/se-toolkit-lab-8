@@ -4,15 +4,84 @@ Paste your checkpoint evidence below. Add screenshots as image files in the repo
 
 ## Task 1A — Bare agent
 
-<!-- Paste the agent's response to "What is the agentic loop?" and "What labs are available in our LMS?" -->
+**Question: "What is the agentic loop?"**
+
+The agentic loop is the fundamental cycle that autonomous AI agents follow to accomplish tasks. It's the core reasoning pattern that enables agents to act independently toward goals.
+
+**The Basic Loop:**
+
+```
+Perceive → Think → Act → Observe → (repeat)
+```
+
+1. **Perceive** - The agent gathers information about its environment (user input, tool outputs, file contents, API responses, system state)
+2. **Think** - The agent processes information and plans (analyze current state, reason about what needs to be done, decide on next action, consider constraints and risks)
+3. **Act** - The agent executes its decision (call a tool, send a message, modify a file, run a command)
+4. **Observe** - The agent receives feedback (tool output or error messages, success/failure signals, new state information)
+
+Then the loop repeats until the goal is achieved or the agent determines it cannot proceed.
+
+**Question: "What labs are available in our LMS?"**
+
+The bare agent (without MCP tools) responded by searching the workspace files and provided information from the lab documentation, not real backend data. It listed labs from the README and task files but couldn't access actual LMS data.
+
+---
 
 ## Task 1B — Agent with LMS tools
 
-<!-- Paste the agent's response to "What labs are available?" and "Describe the architecture of the LMS system" -->
+**Question: "What labs are available?"**
+
+The agent with MCP tools returned real data from the LMS backend:
+
+| ID | Lab Title |
+|----|-----------|
+| 1 | Lab 01 – Products, Architecture & Roles |
+| 2 | Lab 02 — Run, Fix, and Deploy a Backend Service |
+| 3 | Lab 03 — Backend API: Explore, Debug, Implement, Deploy |
+| 4 | Lab 04 — Testing, Front-end, and AI Agents |
+| 5 | Lab 05 — Data Pipeline and Analytics Dashboard |
+| 6 | Lab 06 — Build Your Own Agent |
+| 7 | Lab 07 — Build a Client with an AI Coding Agent |
+| 8 | lab-08 |
+
+**Question: "Which lab has the lowest pass rate?"**
+
+The agent called multiple MCP tools (`lms_labs`, `lms_completion_rate`) and returned:
+
+| Lab | Completion Rate | Passed | Total |
+|-----|-----------------|--------|-------|
+| Lab 01 | 100.0% | 258 | 258 |
+| Lab 02 | 89.1% | 131 | 147 |
+| Lab 03 | 89.7% | 156 | 174 |
+| Lab 04 | 96.7% | 238 | 246 |
+| Lab 05 | 98.4% | 246 | 250 |
+| Lab 06 | 98.4% | 241 | 245 |
+| Lab 07 | 99.6% | 236 | 237 |
+| Lab 08 | 0.0% | 0 | 0 |
+
+**Answer: Lab 02 has the lowest pass rate at 89.1%** (among labs with actual submissions; Lab 08 shows 0% because it has no submissions yet).
+
+---
 
 ## Task 1C — Skill prompt
 
-<!-- Paste the agent's response to "Show me the scores" (without specifying a lab) -->
+**Question: "Show me the scores" (without specifying a lab)**
+
+The agent with the skill prompt provided a comprehensive overview of all lab scores, including:
+
+- Average scores by lab (all tasks combined)
+- Detailed breakdown per lab with task-level statistics
+- Key insights:
+  - Highest performing lab: Lab 05 & Lab 07 (~67.3% avg)
+  - Lowest performing lab: Lab 02 (~48.8% avg)
+  - Most attempted task: Lab 01 "Lab setup" (2,970 attempts)
+  - Toughest task: Lab 06 "The System Agent" (42.8% avg, 2,052 attempts)
+
+The skill prompt taught the agent to:
+- Format percentages as `XX.X%`
+- Use markdown tables for comparative data
+- Lead with the answer, then offer optional details
+- Ask for clarification when a required parameter (like `lab`) is missing
 
 ## Task 2A — Deployed agent
 
