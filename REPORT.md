@@ -85,11 +85,68 @@ The skill prompt taught the agent to:
 
 ## Task 2A — Deployed agent
 
-<!-- Paste a short nanobot startup log excerpt showing the gateway started inside Docker -->
+**Nanobot gateway startup logs:**
+
+```
+nanobot-1  | Using config: /tmp/nanobot-config-resolved.json     
+nanobot-1  | 🐈 Starting nanobot gateway version 0.1.4.post5 on port 18790...
+nanobot-1  | 2026-03-27 12:02:11.182 | INFO     | nanobot.channels.manager:_init_channels:54 - WebChat channel enabled
+nanobot-1  | ✓ Channels enabled: webchat                         
+nanobot-1  | ✓ Heartbeat: every 1800s                            
+nanobot-1  | 2026-03-27 12:02:12.077 | INFO     | nanobot.channels.manager:start_all:87 - Starting webchat channel...
+nanobot-1  | 2026-03-27 12:02:12.134 | INFO     | nanobot_webchat.channel:start:72 - WebChat starting on 0.0.0.0:8765
+```
+
+The gateway started successfully with the WebChat channel enabled on port 8765.
 
 ## Task 2B — Web client
 
-<!-- Screenshot of a conversation with the agent in the Flutter web app -->
+**WebSocket endpoint test:**
+
+```
+Request: {"content": "What can you do?"}
+
+Response: Hi! I'm nanobot 🐈, your personal AI assistant. Here's what I can help you with:
+
+## Core Capabilities
+
+**📁 File Management**
+- Read, write, and edit files
+- Browse directories and explore your workspace
+
+**🌐 Web Access**
+- Search the web for information
+- Fetch and extract content from URLs
+
+**⚡ Command Execution**
+- Run shell commands in your Linux environment
+- Execute scripts and automate tasks
+
+**⏰ Scheduling**
+- Set one-time reminders
+- Create recurring tasks and cron jobs
+
+**💬 Communication**
+- Send messages to Telegram, Discord, and other channels
+- Spawn subagents for complex background tasks
+
+## Available Skills
+
+- **Memory** — Store and retrieve important information across sessions
+- **Skill Creator** — Create or update custom agent skills
+- **ClawHub** — Browse and install skills from the public registry
+- **Cron** — Manage scheduled reminders and recurring tasks
+
+## What I Value
+
+- Accuracy over speed
+- Transparency in my actions
+- Your privacy and safety
+
+Is there something specific you'd like help with? 😊
+```
+
+**Flutter web client:** Accessible at `http://localhost:42002/flutter`, protected by `NANOBOT_ACCESS_KEY`. Login successful, agent responds to queries via WebSocket.
 
 ## Task 3A — Structured logging
 
