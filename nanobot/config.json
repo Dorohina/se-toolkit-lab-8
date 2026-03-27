@@ -13,7 +13,17 @@
   },
   "channels": {
     "sendProgress": true,
-    "sendToolHints": false
+    "sendToolHints": false,
+    "webchat": {
+      "enabled": true,
+      "allow_from": ["*"],
+      "host": "0.0.0.0",
+      "port": 8765
+    }
+  },
+  "gateway": {
+    "host": "0.0.0.0",
+    "port": 18790
   },
   "providers": {
     "custom": {
