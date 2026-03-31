@@ -451,7 +451,75 @@ The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent
 
 ## Task 4C — Bug fix and recovery
 
-<!-- 1. Root cause identified
-     2. Code fix (diff or description)
-     3. Post-fix response to "What went wrong?" showing the real underlying failure
-     4. Healthy follow-up report or transcript after recovery -->
+### 1. Root cause identified
+
+**Location:** `backend/app/routers/items.py`, lines 16-22
+
+**The planted bug:** The `get_items` endpoint caught ALL exceptions (including database connection failures) and incorrectly returned HTTP 404 (Not Found) instead of HTTP 500 (Internal Server Error).
+
+```python
+# BEFORE (buggy code):
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    try:
+        return await read_items(session)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,  # ❌ Wrong: DB failures are not 404
+            detail="Items not found",
+        ) from exc
+```
+
+**Why this is wrong:** A 404 means "the requested resource doesn't exist" — but when PostgreSQL is down, the `/items/` endpoint exists, it just can't reach the database. This is a server error (500), not a missing resource (404).
+
+### 2. Code fix
+
+Changed the status code from `HTTP_404_NOT_FOUND` to `HTTP_500_INTERNAL_SERVER_ERROR` and updated the detail message:
+
+```python
+# AFTER (fixed code):
+@router.get("/", response_model=list[ItemRecord])
+async def get_items(session: AsyncSession = Depends(get_session)):
+    """Get all items."""
+    try:
+        return await read_items(session)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,  # ✅ Correct: DB failures are 500
+            detail="Database error",
+        ) from exc
+```
+
+### 3. Post-fix verification (DB failure returns 500)
+
+After rebuilding and redeploying, stopped PostgreSQL and triggered `/items/`:
+
+```bash
+docker compose --env-file .env.docker.secret stop postgres
+curl -v http://localhost:42002/items/ -H "Authorization: Bearer lms-adminvd-key"
+```
+
+**Response after fix:**
+```
+< HTTP/1.1 500 Internal Server Error
+{"detail":"Database error"}
+```
+
+✅ **Confirmed:** The endpoint now correctly returns **500 Internal Server Error** instead of 404.
+
+### 4. Healthy follow-up
+
+After restarting PostgreSQL:
+
+```bash
+docker compose --env-file .env.docker.secret start postgres
+curl -sf http://localhost:42002/items/ -H "Authorization: Bearer lms-adminvd-key"
+```
+
+**Response after recovery:**
+```json
+[{"title":"Lab 01 – Products, Architecture & Roles","id":1,"attributes":{},"description":"","type":"lab","parent_id":null,"created_at":"2026-03-27T10:43:36.144514"},...]
+```
+
+✅ **Confirmed:** The endpoint returns actual item data after PostgreSQL recovery.
