@@ -150,9 +150,11 @@ Is there something specific you'd like help with? 😊
 
 ## Task 3A — Structured logging
 
-### Happy-path log sequence (request_started → request_completed with status 200)
+### Checkpoint Evidence
 
-Triggered by requesting `/items/` through the Flutter client:
+#### 1. Happy-path log sequence (request_started → request_completed with status 200)
+
+Triggered by requesting `/items/` through the backend API:
 
 ```json
 {"_msg":"request_started","_time":"2026-03-31T11:34:19.755010816Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
@@ -167,43 +169,51 @@ Triggered by requesting `/items/` through the Flutter client:
 - The sequence shows: request received → auth validated → DB query executed → response sent (200 OK)
 - Total duration: 3821ms
 
-### Error-path log sequence (PostgreSQL stopped)
+#### 2. Error-path log sequence (PostgreSQL stopped)
 
-After running `docker compose stop postgres` and triggering a request:
+After running `docker compose stop postgres` and triggering a request to `/items/`:
 
 ```json
-{"_msg":"db_query","event":"db_query","operation":"select","level":"error","error":"connection refused","service.name":"Learning Management Service","severity":"ERROR"}
-{"_msg":"request_completed","event":"request_completed","status":"500","service.name":"Learning Management Service","severity":"INFO"}
+{"_msg":"request_started","_time":"2026-03-31T12:24:58.638161664Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
+{"_msg":"auth_success","_time":"2026-03-31T12:24:58.639238144Z","event":"auth_success","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
+{"_msg":"db_query","_time":"2026-03-31T12:24:58.639809536Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
+{"_msg":"db_query","_time":"2026-03-31T12:24:59.518430464Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"ERROR","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05","error":"(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) <class 'asyncpg.exceptions._base.InterfaceError'>: connection is closed"}
+{"_msg":"request_completed","_time":"2026-03-31T12:24:59.640047104Z","event":"request_completed","method":"GET","path":"/items/","status":"404","duration_ms":"1002","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
 ```
 
 **Key observations:**
-- `level: "error"` appears on the `db_query` event — the failure point
-- `status: "500"` on `request_completed` — the request failed
-- Error logs still include trace correlation fields for debugging
+- `severity: "ERROR"` appears on the second `db_query` event — the failure point
+- The error message shows: `connection is closed` — PostgreSQL was unreachable
+- `status: "404"` on `request_completed` — the request failed
+- Error logs still include `trace_id` for correlation with traces
 
-### VictoriaLogs UI query
+#### 3. VictoriaLogs UI query
 
 **Access:** `http://localhost:42002/utils/victorialogs/select/vmui`
 
-**Query used:** `service.name:"Learning Management Service" AND severity:INFO`
+**Query used:** `service.name:"Learning Management Service" AND event:request_started`
 
 **Result:** Returns structured log entries with full trace correlation. Much easier than grepping `docker compose logs` — instant filtering by any field (service, level, event type, trace_id).
+
+![VictoriaLogs UI Query](wiki/images/task3a-victorialogs-query.png)
 
 ---
 
 ## Task 3B — Traces
 
-### VictoriaTraces UI
+### Checkpoint Evidence
+
+#### 1. VictoriaTraces UI
 
 **Access:** `http://localhost:42002/utils/victoriatraces/select/vmui`
 
 Traces are ingested via OpenTelemetry from the backend. Each trace contains spans for:
 - `request_started` — entry point
-- `auth_success` — authentication span  
+- `auth_success` — authentication span
 - `db_query` — database operation
 - `request_completed` — response sent
 
-### Healthy trace structure
+#### 2. Healthy trace structure
 
 A healthy trace (trace_id: `048658d6703fff6c24b509471a0fde74`) shows:
 
@@ -217,24 +227,30 @@ Trace: GET /items/
 
 All spans share the same trace_id and show successful completion.
 
-### Error trace structure
+![Healthy Trace](wiki/images/task3b-healthy-trace.png)
 
-After stopping PostgreSQL, the error trace shows:
+#### 3. Error trace structure
+
+After stopping PostgreSQL, the error trace (trace_id: `f2802dcec1d114bdcb9b075fa93bad45`) shows:
 
 ```
 Trace: GET /items/
-├── request_started (span: xxx)
-├── db_query: ERROR - connection refused (span: xxx) ← FAILURE POINT
-└── request_completed: status 500 (span: xxx)
+├── request_started (span: ac9e19fe0e065e05)
+├── auth_success (span: ac9e19fe0e065e05)
+├── db_query: INFO (span: ac9e19fe0e065e05)
+├── db_query: ERROR - connection is closed (span: ac9e19fe0e065e05) ← FAILURE POINT
+└── request_completed: status 404, duration 1002ms (span: ac9e19fe0e065e05)
 ```
 
-The error appears in the `db_query` span — the trace makes it immediately clear where the failure occurred.
+The error appears in the second `db_query` span — the trace makes it immediately clear where the failure occurred.
 
-### Log-trace correlation
+![Error Trace](wiki/images/task3b-error-trace.png)
+
+#### 4. Log-trace correlation
 
 Logs and traces are correlated via `trace_id`. From an error log:
 ```json
-{"trace_id":"048658d6703fff6c24b509471a0fde74", "level":"error", ...}
+{"trace_id":"f2802dcec1d114bdcb9b075fa93bad45", "severity":"ERROR", "error":"connection is closed", ...}
 ```
 
 You can fetch the full trace using that ID to see the complete request flow.
@@ -243,7 +259,9 @@ You can fetch the full trace using that ID to see the complete request flow.
 
 ## Task 3C — Observability MCP tools
 
-### New MCP tools added
+### Checkpoint Evidence
+
+#### 1. New MCP tools added
 
 | Tool | Description | Parameters |
 |------|-------------|------------|
@@ -252,7 +270,7 @@ You can fetch the full trace using that ID to see the complete request flow.
 | `traces_list` | List recent traces, optionally filtered by service | `service`, `limit` (default 10), `time_range` (default "1h") |
 | `traces_get` | Fetch a specific trace by ID | `trace_id` (required) |
 
-### Files created/modified
+#### 2. Files created/modified
 
 | File | Purpose |
 |------|---------|
@@ -261,14 +279,16 @@ You can fetch the full trace using that ID to see the complete request flow.
 | `nanobot/config.json` | Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables |
 | `nanobot/workspace/skills/observability/SKILL.md` | Created observability skill prompt teaching the agent how to use the tools |
 
-### Testing the tools
+#### 3. Testing the tools
 
 **Normal conditions (all services healthy):**
 
-```
-User: Any errors in the last hour?
+When asking the agent "Any errors in the last hour?" with all services running:
 
-Agent: 🐈 nanobot
+```
+Agent Response:
+
+🐈 nanobot
 System Health Check (Last Hour)
 
 ✅ No errors detected in the last hour.
@@ -295,34 +315,38 @@ The agent called `logs_error_count` with `time_range="1h"` and reported zero err
 After running `docker compose stop postgres` and triggering requests:
 
 ```
-User: Any errors in the last hour?
+Agent Response:
 
-Agent: Yes, I found errors in the last hour from the "Learning Management Service".
-The errors indicate database connection failures — specifically "connection refused"
+Yes, I found errors in the last hour from the "Learning Management Service".
+The errors indicate database connection failures — specifically "connection is closed"
 when attempting db_query operations. This suggests the PostgreSQL database is
 unreachable.
 
-Most recent error: db_query operation failed with "connection refused"
-Trace ID for investigation: 048658d6703fff6c24b509471a0fde74
+Most recent error: db_query operation failed with "connection is closed"
+Error details: (sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) connection is closed
+Trace ID for investigation: f2802dcec1d114bdcb9b075fa93bad45
+
+The error occurred at 2026-03-31T12:24:59.518430464Z during a SELECT operation
+on the "item" table.
 ```
 
 The agent:
 1. Called `logs_error_count` — found errors
-2. Called `logs_search` with `query="level:error"` — retrieved error details
+2. Called `logs_search` with `query="severity:ERROR"` — retrieved error details
 3. Extracted `trace_id` from error logs
 4. Summarized findings concisely without dumping raw JSON
 
-### Observability skill prompt
+#### 4. Observability skill prompt
 
 The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent to:
 
 1. **Start with `logs_error_count`** for quick health assessment
-2. **Use `logs_search`** with `query="level:error"` to see error details
+2. **Use `logs_search`** with `query="level:error"` or `query="severity:ERROR"` to see error details
 3. **Extract `trace_id`** from error logs and fetch full traces with `traces_get`
 4. **Summarize findings** concisely — don't dump raw JSON
 5. **Use appropriate time ranges** — "1h" for recent, "24h" or "7d" for historical
 
-### LogsQL query patterns
+#### 5. LogsQL query patterns
 
 - `*` — All logs
 - `level:error` — Error-level logs
@@ -331,6 +355,26 @@ The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent
 - `event:db_query` — Filter by event type
 - `path:/items/` — Filter by request path
 - Combine: `service.name:"backend" AND level:error`
+
+#### 6. VictoriaLogs API test
+
+Direct API query for errors:
+```bash
+curl "http://localhost:42010/select/logsql/query?query=severity:ERROR&limit=10"
+```
+
+Result showing the PostgreSQL connection error:
+```json
+{
+  "_msg": "db_query",
+  "severity": "ERROR",
+  "error": "(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) ... connection is closed",
+  "service.name": "Learning Management Service",
+  "trace_id": "f2802dcec1d114bdcb9b075fa93bad45",
+  "span_id": "ac9e19fe0e065e05",
+  "_time": "2026-03-31T12:24:59.518430464Z"
+}
+```
 
 ## Task 4A — Multi-step investigation
 
