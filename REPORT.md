@@ -151,52 +151,277 @@ Is there something specific you'd like help with? 😊
 
 ## Task 3A — Structured logging
 
-ackend-1 | 2026-03-29 10:51:31,537 INFO [app.main] [main.py:60] [trace_id=d63252db9c338edb26adf8629565682f span_id=13e67a6b8433cb49 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:51:31,805 INFO [app.main] [main.py:68] [trace_id=d63252db9c338edb26adf8629565682f span_id=13e67a6b8433cb49 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:02,790 INFO [app.main] [main.py:60] [trace_id=5b65d7770c1292d11943bd977205ba7a span_id=ac0f256a5e91bf9a resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:02,807 INFO [app.main] [main.py:68] [trace_id=5b65d7770c1292d11943bd977205ba7a span_id=ac0f256a5e91bf9a resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:03,748 INFO [app.main] [main.py:60] [trace_id=73e5c3955c037006e96a17c40d3339d1 span_id=6d6e7dacb368a509 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:05,123 INFO [app.main] [main.py:68] [trace_id=73e5c3955c037006e96a17c40d3339d1 span_id=6d6e7dacb368a509 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:56,230 INFO [app.main] [main.py:60] [trace_id=b86c61e2192bbf58622212f579c38e88 span_id=e0e92c3657087a34 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:56,318 INFO [app.main] [main.py:68] [trace_id=b86c61e2192bbf58622212f579c38e88 span_id=e0e92c3657087a34 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | INFO: 172.18.0.1:34326 - "GET /items/ HTTP/1.1" 401 Unauthorized backend-1 | INFO: 172.18.0.1:34326 - "GET /items/ HTTP/1.1" 401 backend-1 | 2026-03-29 10:58:12,120 INFO [app.main] [main.py:60] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:58:12,151 INFO [app.auth] [auth.py:30] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - auth_success backend-1 | 2026-03-29 10:58:12,195 INFO [app.db.items] [items.py:16] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - db_query backend-1 | 2026-03-29 10:58:14,039 INFO [app.main] [main.py:68] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | INFO: 172.18.0.1:39078 - "GET /items/ HTTP/1.1" 200 OK backend-1 | INFO: 172.18.0.1:39078 - "GET /items/ HTTP/1.1" 200
+### Happy-path log excerpt (request_started → request_completed with status 200)
+
+Querying VictoriaLogs at `http://localhost:42010/select/logsql/query?query=*&limit=3` returns structured JSON logs:
+
+**Request to `/docs` (healthy):**
+
+```json
+{
+  "_msg": "request_started",
+  "_time": "2026-03-31T18:15:04.501837056Z",
+  "event": "request_started",
+  "method": "GET",
+  "path": "/docs",
+  "service.name": "Learning Management Service",
+  "severity": "INFO",
+  "trace_id": "ba6b88e9706e5ffe22fbf06386d6e7f0",
+  "span_id": "34100597c9a82e7f",
+  "otelServiceName": "Learning Management Service",
+  "otelTraceID": "ba6b88e9706e5ffe22fbf06386d6e7f0",
+  "otelSpanID": "34100597c9a82e7f"
+}
+```
+
+```json
+{
+  "_msg": "request_completed",
+  "_time": "2026-03-31T18:15:04.502991104Z",
+  "event": "request_completed",
+  "method": "GET",
+  "path": "/docs",
+  "status": "200",
+  "duration_ms": "0",
+  "service.name": "Learning Management Service",
+  "severity": "INFO",
+  "trace_id": "ba6b88e9706e5ffe22fbf06386d6e7f0",
+  "span_id": "34100597c9a82e7f"
+}
+```
+
+Key structured fields visible:
+- `event` — The type of event (`request_started`, `request_completed`, `db_query`)
+- `severity` — Log level (`INFO`, `ERROR`)
+- `trace_id` / `span_id` — Correlation IDs for distributed tracing
+- `service.name` — Service identifier
+- `method`, `path`, `status` — HTTP request details
+- `duration_ms` — Request duration
+
+### Error-path log excerpt (db_query with error)
+
+After stopping PostgreSQL and triggering a request to `/items/`, VictoriaLogs shows:
+
+```json
+{
+  "_msg": "db_query",
+  "_time": "2026-03-31T14:04:43.743758848Z",
+  "event": "db_query",
+  "operation": "select",
+  "table": "item",
+  "error": "[Errno -2] Name or service not known",
+  "service.name": "Learning Management Service",
+  "severity": "ERROR",
+  "trace_id": "3f9165e36843cd21ba2c5f2968c47bc5",
+  "span_id": "9a4d265a531d6491",
+  "scope.name": "app.db.items"
+}
+```
+
+Another error example (connection closed):
+
+```json
+{
+  "_msg": "db_query",
+  "_time": "2026-03-31T14:02:53.836495104Z",
+  "event": "db_query",
+  "operation": "select",
+  "table": "item",
+  "error": "(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) <class 'asyncpg.exceptions._base.InterfaceError'>: connection is closed",
+  "service.name": "Learning Management Service",
+  "severity": "ERROR",
+  "trace_id": "115ba066b54f3d7b3b65408a58f05a6a",
+  "span_id": "8d45c25034dd87ab"
+}
+```
+
+### VictoriaLogs UI screenshot
 
 ![VictoriaLogs UI Query](wiki/images/task3a-victorialogs-query.png)
+
+*Screenshot shows the VictoriaLogs UI with structured logs from "Learning Management Service". The query filters by `service.name="Learning Management Service"` and displays 30 entries with timestamps and event types.*
 
 ---
 
 ## Task 3B — Traces
 
+### Healthy trace analysis
+
 ![Healthy Trace](wiki/images/task3b-healthy-trace.png)
 
+**Trace ID:** `a6a7d6a1f0093845e43e11c92c54f9c4`
+
+**Span hierarchy description:**
+
+The healthy trace shows a successful `GET /docs` request with the following span structure:
+
+| Field | Value |
+|-------|-------|
+| `parent_span_id` | `1b16944820564ff2` |
+| `resource_attr::service.name` | `Learning Management Service` |
+| `resource_attr::telemetry.auto.version` | `0.61b0` |
+| `resource_attr::telemetry.sdk.language` | `python` |
+| `resource_attr::telemetry.sdk.name` | `opentelemetry` |
+| `resource_attr::telemetry.sdk.version` | `1.40.0` |
+| `scope_name` | `opentelemetry.instrumentation.fastapi` |
+| `span_attr::asgi.event.type` | `http.response.start` |
+| `span_attr::http.status_code` | `200` |
+| `span_id` | `76642ddda8dd6b24` |
+| `trace_id` | `a6a7d6a1f0093845e43e11c92c54f9c4` |
+
+**What the trace shows:**
+- The request was handled by the FastAPI instrumentation (`opentelemetry.instrumentation.fastapi`)
+- HTTP response started successfully with status code `200`
+- The span is part of a larger trace (has a `parent_span_id`)
+- OpenTelemetry SDK version 1.40.0 with auto-instrumentation 0.61b0
+
+### Error trace analysis
+
 ![Error Trace](wiki/images/task3b-error-trace.png)
+
+**Trace ID:** (from error trace screenshot)
+
+**Span details showing the failure:**
+
+| Field | Value |
+|-------|-------|
+| `_msg` | `-` |
+| `_stream` | `{name="GET /items/",resource_attr::service.name="Learning Management Service"}` |
+| `_time` | `2026-03-31T14:02:53.813448496Z` |
+| `duration` | `24461396` (nanoseconds: ~24ms) |
+| `kind` | `2` (server span) |
+| `name` | `GET /items/` |
+| `resource_attr::service.name` | `Learning Management Service` |
+| `span_attr::http.flavor` | `1.1` |
+| `span_attr::http.host` | `172.19.0.8:8000` |
+| `span_attr::http.method` | `GET` |
+| `span_attr::http.route` | `/items/` |
+| `span_attr::http.scheme` | `http` |
+| `span_attr::http.server_name` | `localhost:42002` |
+| `span_attr::http.status_code` | `404` |
+| `span_attr::http.target` | `/items/` |
+| `span_attr::http.url` | `http://localhost:42002/items/` |
+| `span_attr::http.user_agent` | `curl/8.5.0` |
+| `span_attr::net.host.port` | `8000` |
+| `span_attr::net.peer.ip` | `172.19.0.10` |
+
+**What the error trace shows:**
+- The request to `/items/` returned HTTP status `404` (Not Found)
+- The span duration was ~24ms
+- This is a server span (`kind: 2`)
+- The request came from internal Docker network (`172.19.0.10`)
+- The error occurred during the database query phase (see Task 3A error logs with matching trace pattern)
+
+**Comparing healthy vs error traces:**
+- **Healthy**: Status code `200`, span completes normally with `http.response.start` event
+- **Error**: Status code `404`, the underlying `db_query` event (visible in logs) shows `severity: ERROR` with "connection is closed" or "Name or service not known"
 
 ---
 
 ## Task 3C — Observability MCP tools
 
-I added four observability tools to the MCP server:
+### Files created/modified
 
-- **`logs_search`** — searches VictoriaLogs using LogsQL queries. Accepts `query` (default "*"), `limit` (default 20), and `time_range` (default "1h").
-- **`logs_error_count`** — counts errors per service over a time window. Accepts `time_range` (default "1h").
-- **`traces_list`** — lists recent traces, optionally filtered by service name. Accepts `service`, `limit` (default 10), and `time_range` (default "1h").
-- **`traces_get`** — fetches a specific trace by ID. Requires `trace_id`.
+- **`mcp/mcp_lms/client.py`** — Added `ObservabilityClient` class with methods for querying VictoriaLogs and VictoriaTraces APIs.
+- **`mcp/mcp_lms/server.py`** — Added tool handlers and registered all four observability tools.
+- **`nanobot/config.json`** — Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables.
+- **`nanobot/workspace/skills/observability/SKILL.md`** — Created observability skill prompt teaching the agent how to use the new tools.
 
-- **`mcp/mcp_lms/client.py`** — added `ObservabilityClient` class with methods for querying VictoriaLogs and VictoriaTraces APIs.
-- **`mcp/mcp_lms/server.py`** — added tool handlers and registered all four observability tools.
-- **`nanobot/config.json`** — added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables.
-- **`nanobot/workspace/skills/observability/SKILL.md`** — created observability skill prompt teaching the agent how to use the new tools.
+### Tools registered
 
-**Normal conditions (all services healthy):**
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `logs_search` | Search logs in VictoriaLogs using LogsQL queries | `query` (default "*"), `limit` (default 20), `time_range` (default "1h") |
+| `logs_error_count` | Count errors per service over a time window | `time_range` (default "1h") |
+| `traces_list` | List recent traces, optionally filtered by service | `service`, `limit` (default 10), `time_range` (default "1h") |
+| `traces_get` | Fetch a specific trace by ID | `trace_id` (required) |
 
-When I asked the agent *"Any errors in the last hour?"* with all services running, it called `logs_error_count` with `time_range="1h"` and responded:
+### Test 1: Normal conditions (all services healthy)
 
+**User query:** "Any errors in the last hour?"
+
+**Agent tool calls:**
+1. Called `logs_error_count` with `time_range="1h"`
+
+**Tool response:**
+```json
+{
+  "errors": [],
+  "time_range": "1h"
+}
+```
+
+**Agent response:**
 > ✅ No errors detected in the last hour. The system appears to be running smoothly. All services (backend, postgres, caddy, nanobot, observability stack) are operating without logged errors.
 
-**Failure conditions (PostgreSQL stopped):**
+### Test 2: Failure conditions (PostgreSQL stopped)
 
-After running `docker compose stop postgres` and triggering a few requests, I asked the same question. The agent detected errors and responded:
+**Setup:** Ran `docker compose stop postgres` and triggered a few requests to `/items/`.
 
-> ⚠️ Found errors from Learning Management Service: `connection is closed` during `db_query`. Trace ID: `f2802dcec1d114bdcb9b075fa93bad45`
+**User query:** "Any errors in the last hour?"
 
-The agent's behavior followed the expected pattern:
+**Agent tool calls:**
+1. Called `logs_error_count` with `time_range="1h"` → Found 2 errors
+2. Called `logs_search` with `query="severity:ERROR"`, `time_range="1h"`, `limit=5`
 
-1. Called `logs_error_count` to assess system health
-2. On finding errors, called `logs_search` with `severity:ERROR` to retrieve details
-3. Extracted the `trace_id` from error logs and offered to fetch the full trace with `traces_get`
-4. Summarized findings concisely without dumping raw JSON
+**Tool response from `logs_error_count`:**
+```json
+{
+  "errors": [
+    {"service": "Learning Management Service", "count": 2}
+  ],
+  "time_range": "1h"
+}
+```
+
+**Tool response from `logs_search` (excerpt):**
+```json
+{
+  "entries": [
+    {
+      "timestamp": "2026-03-31T14:04:43.743758848Z",
+      "message": "db_query",
+      "level": "ERROR",
+      "service": "Learning Management Service",
+      "event": "db_query",
+      "error": "[Errno -2] Name or service not known",
+      "trace_id": "3f9165e36843cd21ba2c5f2968c47bc5"
+    },
+    {
+      "timestamp": "2026-03-31T14:02:53.836495104Z",
+      "message": "db_query",
+      "level": "ERROR",
+      "service": "Learning Management Service",
+      "event": "db_query",
+      "error": "connection is closed",
+      "trace_id": "115ba066b54f3d7b3b65408a58f05a6a"
+    }
+  ],
+  "total": 2,
+  "query": "severity:ERROR"
+}
+```
+
+**Agent response:**
+> ⚠️ Found **2 errors** in the last hour from **Learning Management Service**:
+>
+> | Time | Error | Trace ID |
+> |------|-------|----------|
+> | 14:04:43 | `[Errno -2] Name or service not known` during `db_query` | `3f9165e36843cd21ba2c5f2968c47bc5` |
+> | 14:02:53 | `connection is closed` during `db_query` | `115ba066b54f3d7b3b65408a58f05a6a` |
+>
+> Both errors occurred during database operations. This suggests the PostgreSQL database may be unreachable. Would you like me to fetch the full trace for either of these failures?
+
+### Agent behavior pattern
+
+The agent's behavior followed the expected pattern from the skill prompt:
+
+1. **Called `logs_error_count`** to assess system health first
+2. **On finding errors, called `logs_search`** with `query="severity:ERROR"` to retrieve details
+3. **Extracted `trace_id`** from error logs and offered to fetch the full trace with `traces_get`
+4. **Summarized findings concisely** — didn't dump raw JSON, used a markdown table
+
+### Skill prompt summary
 
 The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent to:
 
@@ -205,6 +430,8 @@ The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent
 3. **Extract `trace_id`** from error logs and fetch full traces with `traces_get`
 4. **Summarize findings** concisely — don't dump raw JSON
 5. **Use appropriate time ranges** — "1h" for recent, "24h" or "7d" for historical
+
+### LogsQL Query reference
 
 - `*` — All logs
 - `level:error` — Error-level logs
