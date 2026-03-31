@@ -13,7 +13,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 from pydantic import BaseModel, Field
 
-from mcp_lms.client import LMSClient
+from mcp_lms.client import LMSClient, ObservabilityClient
 
 _base_url: str = ""
 
@@ -39,6 +39,46 @@ class _TopLearnersQuery(_LabQuery):
 
 
 # ---------------------------------------------------------------------------
+# Observability input models
+# ---------------------------------------------------------------------------
+
+
+class _LogsSearchQuery(BaseModel):
+    query: str = Field(
+        default="*",
+        description="LogsQL query string. Use '*' for all logs, 'level:error' for errors.",
+    )
+    limit: int = Field(default=20, ge=1, le=100, description="Max entries to return.")
+    time_range: str = Field(
+        default="1h",
+        description="Time range like '1h', '6h', '24h', '7d'.",
+    )
+
+
+class _LogsErrorCountQuery(BaseModel):
+    time_range: str = Field(
+        default="1h",
+        description="Time window to count errors, e.g. '1h', '6h', '24h'.",
+    )
+
+
+class _TracesListQuery(BaseModel):
+    service: str = Field(
+        default="",
+        description="Filter by service name (optional).",
+    )
+    limit: int = Field(default=10, ge=1, le=50, description="Max traces to return.")
+    time_range: str = Field(
+        default="1h",
+        description="Time range like '1h', '6h', '24h'.",
+    )
+
+
+class _TracesGetQuery(BaseModel):
+    trace_id: str = Field(description="The trace ID to fetch.")
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -59,6 +99,17 @@ def _client() -> LMSClient:
             "LMS backend URL not configured. Pass it as: python -m mcp_lms <base_url>"
         )
     return LMSClient(_base_url, _resolve_api_key())
+
+
+def _obs_client() -> ObservabilityClient:
+    """Create observability client from environment variables."""
+    victorialogs_url = os.environ.get(
+        "NANOBOT_VICTORIALOGS_URL", "http://victorialogs:9428"
+    )
+    victoriatraces_url = os.environ.get(
+        "NANOBOT_VICTORIATRACES_URL", "http://victoriatraces:10428"
+    )
+    return ObservabilityClient(victorialogs_url, victoriatraces_url)
 
 
 def _text(data: BaseModel | Sequence[BaseModel]) -> list[TextContent]:
@@ -110,6 +161,41 @@ async def _completion_rate(args: _LabQuery) -> list[TextContent]:
 
 async def _sync_pipeline(_args: _NoArgs) -> list[TextContent]:
     return _text(await _client().sync_pipeline())
+
+
+# ---------------------------------------------------------------------------
+# Observability tool handlers
+# ---------------------------------------------------------------------------
+
+
+async def _logs_search(args: _LogsSearchQuery) -> list[TextContent]:
+    """Search logs using LogsQL query."""
+    result = await _obs_client().logs_search(
+        query=args.query, limit=args.limit, time_range=args.time_range
+    )
+    return _text(result)
+
+
+async def _logs_error_count(args: _LogsErrorCountQuery) -> list[TextContent]:
+    """Count errors per service over a time window."""
+    result = await _obs_client().logs_error_count(time_range=args.time_range)
+    return _text(result)
+
+
+async def _traces_list(args: _TracesListQuery) -> list[TextContent]:
+    """List recent traces, optionally filtered by service."""
+    result = await _obs_client().traces_list(
+        service=args.service, limit=args.limit, time_range=args.time_range
+    )
+    return _text(result)
+
+
+async def _traces_get(args: _TracesGetQuery) -> list[TextContent]:
+    """Fetch a specific trace by ID."""
+    trace = await _obs_client().traces_get(args.trace_id)
+    if trace is None:
+        return _text({"error": f"Trace {args.trace_id} not found"})
+    return _text(trace)
 
 
 # ---------------------------------------------------------------------------
@@ -183,6 +269,35 @@ _register(
     "Trigger the LMS sync pipeline. May take a moment.",
     _NoArgs,
     _sync_pipeline,
+)
+
+# ---------------------------------------------------------------------------
+# Observability tools registration
+# ---------------------------------------------------------------------------
+
+_register(
+    "logs_search",
+    "Search logs in VictoriaLogs using LogsQL. Use for finding errors, debugging issues, or exploring system behavior.",
+    _LogsSearchQuery,
+    _logs_search,
+)
+_register(
+    "logs_error_count",
+    "Count errors per service over a time window. Use to quickly assess system health.",
+    _LogsErrorCountQuery,
+    _logs_error_count,
+)
+_register(
+    "traces_list",
+    "List recent traces, optionally filtered by service. Use to explore request patterns.",
+    _TracesListQuery,
+    _traces_list,
+)
+_register(
+    "traces_get",
+    "Fetch a specific trace by ID. Use to inspect the full span hierarchy of a request.",
+    _TracesGetQuery,
+    _traces_get,
 )
 
 
