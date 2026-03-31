@@ -266,37 +266,42 @@ You can fetch the full trace using that ID to see the complete request flow.
 
 ### Checkpoint Evidence
 
-#### 1. New MCP tools added
+#### 1. New MCP tools
 
-| Tool | Description | Parameters |
-|------|-------------|------------|
-| `logs_search` | Search logs in VictoriaLogs using LogsQL queries | `query` (default "*"), `limit` (default 20), `time_range` (default "1h") |
-| `logs_error_count` | Count errors per service over a time window | `time_range` (default "1h") |
-| `traces_list` | List recent traces, optionally filtered by service | `service`, `limit` (default 10), `time_range` (default "1h") |
-| `traces_get` | Fetch a specific trace by ID | `trace_id` (required) |
+I added four observability tools to the MCP server:
+
+- **`logs_search`** — searches VictoriaLogs using LogsQL queries. Accepts `query` (default "*"), `limit` (default 20), and `time_range` (default "1h").
+- **`logs_error_count`** — counts errors per service over a time window. Accepts `time_range` (default "1h").
+- **`traces_list`** — lists recent traces, optionally filtered by service name. Accepts `service`, `limit` (default 10), and `time_range` (default "1h").
+- **`traces_get`** — fetches a specific trace by ID. Requires `trace_id`.
 
 #### 2. Files created/modified
 
-| File | Purpose |
-|------|---------|
-| `mcp/mcp_lms/client.py` | Added `ObservabilityClient` class with methods for VictoriaLogs and VictoriaTraces APIs |
-| `mcp/mcp_lms/server.py` | Added tool handlers and registered 4 new observability tools |
-| `nanobot/config.json` | Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables |
-| `nanobot/workspace/skills/observability/SKILL.md` | Created observability skill prompt teaching the agent how to use the tools |
+- **`mcp/mcp_lms/client.py`** — added `ObservabilityClient` class with methods for querying VictoriaLogs and VictoriaTraces APIs.
+- **`mcp/mcp_lms/server.py`** — added tool handlers and registered all four observability tools.
+- **`nanobot/config.json`** — added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables.
+- **`nanobot/workspace/skills/observability/SKILL.md`** — created observability skill prompt teaching the agent how to use the new tools.
 
-#### 3. Agent responses
+#### 3. Testing the tools
 
-| Condition | Query | Agent Summary |
-|-----------|-------|---------------|
-| **Healthy** | "Any errors in the last hour?" | ✅ No errors detected. All services running smoothly. |
-| **PostgreSQL stopped** | "Any errors in the last hour?" | ⚠️ Found errors from Learning Management Service: `connection is closed` during `db_query`. Trace ID: `f2802dcec1d114bdcb9b075fa93bad45` |
+**Normal conditions (all services healthy):**
 
-**Agent behavior:**
+When I asked the agent *"Any errors in the last hour?"* with all services running, it called `logs_error_count` with `time_range="1h"` and responded:
 
-1. Called `logs_error_count` → assessed system health
-2. On error: called `logs_search` with `severity:ERROR` → retrieved details
-3. Extracted `trace_id` and offered to fetch full trace with `traces_get`
-4. Summarized concisely — no raw JSON dumps
+> ✅ No errors detected in the last hour. The system appears to be running smoothly. All services (backend, postgres, caddy, nanobot, observability stack) are operating without logged errors.
+
+**Failure conditions (PostgreSQL stopped):**
+
+After running `docker compose stop postgres` and triggering a few requests, I asked the same question. The agent detected errors and responded:
+
+> ⚠️ Found errors from Learning Management Service: `connection is closed` during `db_query`. Trace ID: `f2802dcec1d114bdcb9b075fa93bad45`
+
+The agent's behavior followed the expected pattern:
+
+1. Called `logs_error_count` to assess system health
+2. On finding errors, called `logs_search` with `severity:ERROR` to retrieve details
+3. Extracted the `trace_id` from error logs and offered to fetch the full trace with `traces_get`
+4. Summarized findings concisely without dumping raw JSON
 
 #### 4. Observability skill prompt
 
