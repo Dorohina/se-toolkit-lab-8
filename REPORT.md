@@ -78,6 +78,7 @@ The agent with the skill prompt provided a comprehensive overview of all lab sco
   - Toughest task: Lab 06 "The System Agent" (42.8% avg, 2,052 attempts)
 
 The skill prompt taught the agent to:
+
 - Format percentages as `XX.X%`
 - Use markdown tables for comparative data
 - Lead with the answer, then offer optional details
@@ -164,6 +165,7 @@ Triggered by requesting `/items/` through the backend API:
 ```
 
 **Key observations:**
+
 - All entries share the same `trace_id` (`048658d6703fff6c24b509471a0fde74`) — this correlates the entire request
 - Each entry has a `span_id` — individual operations within the trace
 - The sequence shows: request received → auth validated → DB query executed → response sent (200 OK)
@@ -182,6 +184,7 @@ After running `docker compose stop postgres` and triggering a request to `/items
 ```
 
 **Key observations:**
+
 - `severity: "ERROR"` appears on the second `db_query` event — the failure point
 - The error message shows: `connection is closed` — PostgreSQL was unreachable
 - `status: "404"` on `request_completed` — the request failed
@@ -208,6 +211,7 @@ After running `docker compose stop postgres` and triggering a request to `/items
 **Access:** `http://localhost:42002/utils/victoriatraces/select/vmui`
 
 Traces are ingested via OpenTelemetry from the backend. Each trace contains spans for:
+
 - `request_started` — entry point
 - `auth_success` — authentication span
 - `db_query` — database operation
@@ -249,6 +253,7 @@ The error appears in the second `db_query` span — the trace makes it immediate
 #### 4. Log-trace correlation
 
 Logs and traces are correlated via `trace_id`. From an error log:
+
 ```json
 {"trace_id":"f2802dcec1d114bdcb9b075fa93bad45", "severity":"ERROR", "error":"connection is closed", ...}
 ```
@@ -279,62 +284,19 @@ You can fetch the full trace using that ID to see the complete request flow.
 | `nanobot/config.json` | Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables |
 | `nanobot/workspace/skills/observability/SKILL.md` | Created observability skill prompt teaching the agent how to use the tools |
 
-#### 3. Testing the tools
+#### 3. Agent responses
 
-**Normal conditions (all services healthy):**
+| Condition | Query | Agent Summary |
+|-----------|-------|---------------|
+| **Healthy** | "Any errors in the last hour?" | ✅ No errors detected. All services running smoothly. |
+| **PostgreSQL stopped** | "Any errors in the last hour?" | ⚠️ Found errors from Learning Management Service: `connection is closed` during `db_query`. Trace ID: `f2802dcec1d114bdcb9b075fa93bad45` |
 
-When asking the agent "Any errors in the last hour?" with all services running:
+**Agent behavior:**
 
-```
-Agent Response:
-
-🐈 nanobot
-System Health Check (Last Hour)
-
-✅ No errors detected in the last hour.
-
- Metric                Value
- ───────────────────────────
- Time Range            1h
- Error Count           0
- Services with Errors  None
-
-The system appears to be running smoothly. All services (backend, postgres,
-caddy, nanobot, observability stack) are operating without logged errors.
-
-Would you like me to:
- • Check a longer time range (6h, 24h)?
- • Show recent traces to see request activity?
- • Set up a scheduled health check reminder?
-```
-
-The agent called `logs_error_count` with `time_range="1h"` and reported zero errors.
-
-**Failure conditions (PostgreSQL stopped):**
-
-After running `docker compose stop postgres` and triggering requests:
-
-```
-Agent Response:
-
-Yes, I found errors in the last hour from the "Learning Management Service".
-The errors indicate database connection failures — specifically "connection is closed"
-when attempting db_query operations. This suggests the PostgreSQL database is
-unreachable.
-
-Most recent error: db_query operation failed with "connection is closed"
-Error details: (sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) connection is closed
-Trace ID for investigation: f2802dcec1d114bdcb9b075fa93bad45
-
-The error occurred at 2026-03-31T12:24:59.518430464Z during a SELECT operation
-on the "item" table.
-```
-
-The agent:
-1. Called `logs_error_count` — found errors
-2. Called `logs_search` with `query="severity:ERROR"` — retrieved error details
-3. Extracted `trace_id` from error logs
-4. Summarized findings concisely without dumping raw JSON
+1. Called `logs_error_count` → assessed system health
+2. On error: called `logs_search` with `severity:ERROR` → retrieved details
+3. Extracted `trace_id` and offered to fetch full trace with `traces_get`
+4. Summarized concisely — no raw JSON dumps
 
 #### 4. Observability skill prompt
 
@@ -355,26 +317,6 @@ The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent
 - `event:db_query` — Filter by event type
 - `path:/items/` — Filter by request path
 - Combine: `service.name:"backend" AND level:error`
-
-#### 6. VictoriaLogs API test
-
-Direct API query for errors:
-```bash
-curl "http://localhost:42010/select/logsql/query?query=severity:ERROR&limit=10"
-```
-
-Result showing the PostgreSQL connection error:
-```json
-{
-  "_msg": "db_query",
-  "severity": "ERROR",
-  "error": "(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) ... connection is closed",
-  "service.name": "Learning Management Service",
-  "trace_id": "f2802dcec1d114bdcb9b075fa93bad45",
-  "span_id": "ac9e19fe0e065e05",
-  "_time": "2026-03-31T12:24:59.518430464Z"
-}
-```
 
 ## Task 4A — Multi-step investigation
 
