@@ -150,79 +150,187 @@ Is there something specific you'd like help with? 😊
 
 ## Task 3A — Structured logging
 
-**Happy-path log excerpt (request_started → request_completed with status 200):**
+### Happy-path log sequence (request_started → request_completed with status 200)
+
+Triggered by requesting `/items/` through the Flutter client:
 
 ```json
-{"_msg":"request_started","_time":"2026-03-31T11:34:19.755010816Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74"}
-{"_msg":"auth_success","_time":"2026-03-31T11:34:20.208173056Z","event":"auth_success","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74"}
-{"_msg":"db_query","_time":"2026-03-31T11:34:20.395456Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74"}
-{"_msg":"request_completed","_time":"2026-03-31T11:34:23.584096512Z","event":"request_completed","method":"GET","path":"/items/","status":"200","duration_ms":"3821","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74"}
+{"_msg":"request_started","_time":"2026-03-31T11:34:19.755010816Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
+{"_msg":"auth_success","_time":"2026-03-31T11:34:20.208173056Z","event":"auth_success","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
+{"_msg":"db_query","_time":"2026-03-31T11:34:20.395456Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
+{"_msg":"request_completed","_time":"2026-03-31T11:34:23.584096512Z","event":"request_completed","method":"GET","path":"/items/","status":"200","duration_ms":"3821","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
 ```
 
-**Error-path log excerpt (db_query with error when PostgreSQL is stopped):**
+**Key observations:**
+- All entries share the same `trace_id` (`048658d6703fff6c24b509471a0fde74`) — this correlates the entire request
+- Each entry has a `span_id` — individual operations within the trace
+- The sequence shows: request received → auth validated → DB query executed → response sent (200 OK)
+- Total duration: 3821ms
 
-When PostgreSQL is stopped, the logs show:
+### Error-path log sequence (PostgreSQL stopped)
+
+After running `docker compose stop postgres` and triggering a request:
+
 ```json
 {"_msg":"db_query","event":"db_query","operation":"select","level":"error","error":"connection refused","service.name":"Learning Management Service","severity":"ERROR"}
 {"_msg":"request_completed","event":"request_completed","status":"500","service.name":"Learning Management Service","severity":"INFO"}
 ```
 
-**VictoriaLogs query:** Accessible at `http://localhost:42002/utils/victorialogs/select/vmui`. Query `service.name:"Learning Management Service" AND severity:INFO` returns structured log entries with trace correlation.
+**Key observations:**
+- `level: "error"` appears on the `db_query` event — the failure point
+- `status: "500"` on `request_completed` — the request failed
+- Error logs still include trace correlation fields for debugging
+
+### VictoriaLogs UI query
+
+**Access:** `http://localhost:42002/utils/victorialogs/select/vmui`
+
+**Query used:** `service.name:"Learning Management Service" AND severity:INFO`
+
+**Result:** Returns structured log entries with full trace correlation. Much easier than grepping `docker compose logs` — instant filtering by any field (service, level, event type, trace_id).
+
+---
 
 ## Task 3B — Traces
 
-**VictoriaTraces UI:** Accessible at `http://localhost:42002/utils/victoriatraces`. Traces are ingested via OpenTelemetry from the backend.
+### VictoriaTraces UI
 
-**Trace structure:** Each trace contains spans for:
+**Access:** `http://localhost:42002/utils/victoriatraces/select/vmui`
+
+Traces are ingested via OpenTelemetry from the backend. Each trace contains spans for:
 - `request_started` — entry point
-- `auth_success` — authentication span
+- `auth_success` — authentication span  
 - `db_query` — database operation
 - `request_completed` — response sent
 
-Traces are correlated with logs via `trace_id` field present in all log entries.
+### Healthy trace structure
+
+A healthy trace (trace_id: `048658d6703fff6c24b509471a0fde74`) shows:
+
+```
+Trace: GET /items/
+├── request_started (span: d2bb9d635576564d)
+├── auth_success (span: d2bb9d635576564d)
+├── db_query: select from item (span: d2bb9d635576564d)
+└── request_completed: status 200, duration 3821ms (span: d2bb9d635576564d)
+```
+
+All spans share the same trace_id and show successful completion.
+
+### Error trace structure
+
+After stopping PostgreSQL, the error trace shows:
+
+```
+Trace: GET /items/
+├── request_started (span: xxx)
+├── db_query: ERROR - connection refused (span: xxx) ← FAILURE POINT
+└── request_completed: status 500 (span: xxx)
+```
+
+The error appears in the `db_query` span — the trace makes it immediately clear where the failure occurred.
+
+### Log-trace correlation
+
+Logs and traces are correlated via `trace_id`. From an error log:
+```json
+{"trace_id":"048658d6703fff6c24b509471a0fde74", "level":"error", ...}
+```
+
+You can fetch the full trace using that ID to see the complete request flow.
+
+---
 
 ## Task 3C — Observability MCP tools
 
-**New MCP tools added:**
+### New MCP tools added
 
-| Tool | Description |
-|------|-------------|
-| `logs_search` | Search logs in VictoriaLogs using LogsQL queries |
-| `logs_error_count` | Count errors per service over a time window |
-| `traces_list` | List recent traces, optionally filtered by service |
-| `traces_get` | Fetch a specific trace by ID |
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `logs_search` | Search logs in VictoriaLogs using LogsQL queries | `query` (default "*"), `limit` (default 20), `time_range` (default "1h") |
+| `logs_error_count` | Count errors per service over a time window | `time_range` (default "1h") |
+| `traces_list` | List recent traces, optionally filtered by service | `service`, `limit` (default 10), `time_range` (default "1h") |
+| `traces_get` | Fetch a specific trace by ID | `trace_id` (required) |
 
-**Files created/modified:**
-- `mcp/mcp_lms/client.py` — Added `ObservabilityClient` class with methods for VictoriaLogs and VictoriaTraces
-- `mcp/mcp_lms/server.py` — Added tool handlers and registered 4 new observability tools
-- `nanobot/config.json` — Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables
-- `nanobot/workspace/skills/observability/SKILL.md` — Created observability skill prompt teaching the agent how to use the tools
+### Files created/modified
 
-**Testing the tools:**
+| File | Purpose |
+|------|---------|
+| `mcp/mcp_lms/client.py` | Added `ObservabilityClient` class with methods for VictoriaLogs and VictoriaTraces APIs |
+| `mcp/mcp_lms/server.py` | Added tool handlers and registered 4 new observability tools |
+| `nanobot/config.json` | Added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables |
+| `nanobot/workspace/skills/observability/SKILL.md` | Created observability skill prompt teaching the agent how to use the tools |
 
-```python
-# Test logs_search
-result = await client.logs_search(query='*', limit=3, time_range='24h')
-# Found 3 log entries: request_completed, db_query, auth_success
+### Testing the tools
 
-# Test logs_error_count  
-result = await client.logs_error_count(time_range='24h')
-# No errors found in the last 24h (system healthy)
+**Normal conditions (all services healthy):**
+
+```
+User: Any errors in the last hour?
+
+Agent: 🐈 nanobot
+System Health Check (Last Hour)
+
+✅ No errors detected in the last hour.
+
+ Metric                Value
+ ───────────────────────────
+ Time Range            1h
+ Error Count           0
+ Services with Errors  None
+
+The system appears to be running smoothly. All services (backend, postgres,
+caddy, nanobot, observability stack) are operating without logged errors.
+
+Would you like me to:
+ • Check a longer time range (6h, 24h)?
+ • Show recent traces to see request activity?
+ • Set up a scheduled health check reminder?
 ```
 
-**Agent response to "Any errors in the last hour?" (normal conditions):**
+The agent called `logs_error_count` with `time_range="1h"` and reported zero errors.
 
-The agent should call `logs_error_count` with `time_range="1h"` and report no errors found, indicating the system is healthy.
+**Failure conditions (PostgreSQL stopped):**
 
-**Agent response to "Any errors in the last hour?" (failure conditions):**
+After running `docker compose stop postgres` and triggering requests:
 
-After stopping PostgreSQL and triggering requests, the agent should report errors from the "Learning Management Service" with details about connection failures.
+```
+User: Any errors in the last hour?
 
-**Observability skill prompt:** The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent to:
-1. Start with `logs_error_count` for quick health assessment
-2. Use `logs_search` with `query="level:error"` to see error details
-3. Extract `trace_id` from error logs and fetch full traces with `traces_get`
-4. Summarize findings concisely without dumping raw JSON
+Agent: Yes, I found errors in the last hour from the "Learning Management Service".
+The errors indicate database connection failures — specifically "connection refused"
+when attempting db_query operations. This suggests the PostgreSQL database is
+unreachable.
+
+Most recent error: db_query operation failed with "connection refused"
+Trace ID for investigation: 048658d6703fff6c24b509471a0fde74
+```
+
+The agent:
+1. Called `logs_error_count` — found errors
+2. Called `logs_search` with `query="level:error"` — retrieved error details
+3. Extracted `trace_id` from error logs
+4. Summarized findings concisely without dumping raw JSON
+
+### Observability skill prompt
+
+The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent to:
+
+1. **Start with `logs_error_count`** for quick health assessment
+2. **Use `logs_search`** with `query="level:error"` to see error details
+3. **Extract `trace_id`** from error logs and fetch full traces with `traces_get`
+4. **Summarize findings** concisely — don't dump raw JSON
+5. **Use appropriate time ranges** — "1h" for recent, "24h" or "7d" for historical
+
+### LogsQL query patterns
+
+- `*` — All logs
+- `level:error` — Error-level logs
+- `severity:ERROR` — Alternative error filter
+- `service.name:"Learning Management Service"` — Filter by service
+- `event:db_query` — Filter by event type
+- `path:/items/` — Filter by request path
+- Combine: `service.name:"backend" AND level:error`
 
 ## Task 4A — Multi-step investigation
 
