@@ -151,52 +151,7 @@ Is there something specific you'd like help with? 😊
 
 ## Task 3A — Structured logging
 
-### Checkpoint Evidence
-
-#### 1. Happy-path log sequence (request_started → request_completed with status 200)
-
-Triggered by requesting `/items/` through the backend API:
-
-```json
-{"_msg":"request_started","_time":"2026-03-31T11:34:19.755010816Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
-{"_msg":"auth_success","_time":"2026-03-31T11:34:20.208173056Z","event":"auth_success","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
-{"_msg":"db_query","_time":"2026-03-31T11:34:20.395456Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
-{"_msg":"request_completed","_time":"2026-03-31T11:34:23.584096512Z","event":"request_completed","method":"GET","path":"/items/","status":"200","duration_ms":"3821","service.name":"Learning Management Service","severity":"INFO","trace_id":"048658d6703fff6c24b509471a0fde74","span_id":"d2bb9d635576564d"}
-```
-
-**Key observations:**
-
-- All entries share the same `trace_id` (`048658d6703fff6c24b509471a0fde74`) — this correlates the entire request
-- Each entry has a `span_id` — individual operations within the trace
-- The sequence shows: request received → auth validated → DB query executed → response sent (200 OK)
-- Total duration: 3821ms
-
-#### 2. Error-path log sequence (PostgreSQL stopped)
-
-After running `docker compose stop postgres` and triggering a request to `/items/`:
-
-```json
-{"_msg":"request_started","_time":"2026-03-31T12:24:58.638161664Z","event":"request_started","method":"GET","path":"/items/","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
-{"_msg":"auth_success","_time":"2026-03-31T12:24:58.639238144Z","event":"auth_success","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
-{"_msg":"db_query","_time":"2026-03-31T12:24:58.639809536Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
-{"_msg":"db_query","_time":"2026-03-31T12:24:59.518430464Z","event":"db_query","operation":"select","table":"item","service.name":"Learning Management Service","severity":"ERROR","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05","error":"(sqlalchemy.dialects.postgresql.asyncpg.InterfaceError) <class 'asyncpg.exceptions._base.InterfaceError'>: connection is closed"}
-{"_msg":"request_completed","_time":"2026-03-31T12:24:59.640047104Z","event":"request_completed","method":"GET","path":"/items/","status":"404","duration_ms":"1002","service.name":"Learning Management Service","severity":"INFO","trace_id":"f2802dcec1d114bdcb9b075fa93bad45","span_id":"ac9e19fe0e065e05"}
-```
-
-**Key observations:**
-
-- `severity: "ERROR"` appears on the second `db_query` event — the failure point
-- The error message shows: `connection is closed` — PostgreSQL was unreachable
-- `status: "404"` on `request_completed` — the request failed
-- Error logs still include `trace_id` for correlation with traces
-
-#### 3. VictoriaLogs UI query
-
-**Access:** `http://localhost:42002/utils/victorialogs/select/vmui`
-
-**Query used:** `service.name:"Learning Management Service" AND event:request_started`
-
-**Result:** Returns structured log entries with full trace correlation. Much easier than grepping `docker compose logs` — instant filtering by any field (service, level, event type, trace_id).
+ackend-1 | 2026-03-29 10:51:31,537 INFO [app.main] [main.py:60] [trace_id=d63252db9c338edb26adf8629565682f span_id=13e67a6b8433cb49 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:51:31,805 INFO [app.main] [main.py:68] [trace_id=d63252db9c338edb26adf8629565682f span_id=13e67a6b8433cb49 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:02,790 INFO [app.main] [main.py:60] [trace_id=5b65d7770c1292d11943bd977205ba7a span_id=ac0f256a5e91bf9a resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:02,807 INFO [app.main] [main.py:68] [trace_id=5b65d7770c1292d11943bd977205ba7a span_id=ac0f256a5e91bf9a resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:03,748 INFO [app.main] [main.py:60] [trace_id=73e5c3955c037006e96a17c40d3339d1 span_id=6d6e7dacb368a509 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:05,123 INFO [app.main] [main.py:68] [trace_id=73e5c3955c037006e96a17c40d3339d1 span_id=6d6e7dacb368a509 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | 2026-03-29 10:52:56,230 INFO [app.main] [main.py:60] [trace_id=b86c61e2192bbf58622212f579c38e88 span_id=e0e92c3657087a34 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:52:56,318 INFO [app.main] [main.py:68] [trace_id=b86c61e2192bbf58622212f579c38e88 span_id=e0e92c3657087a34 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | INFO: 172.18.0.1:34326 - "GET /items/ HTTP/1.1" 401 Unauthorized backend-1 | INFO: 172.18.0.1:34326 - "GET /items/ HTTP/1.1" 401 backend-1 | 2026-03-29 10:58:12,120 INFO [app.main] [main.py:60] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - request_started backend-1 | 2026-03-29 10:58:12,151 INFO [app.auth] [auth.py:30] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - auth_success backend-1 | 2026-03-29 10:58:12,195 INFO [app.db.items] [items.py:16] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - db_query backend-1 | 2026-03-29 10:58:14,039 INFO [app.main] [main.py:68] [trace_id=de259cf0d0d2e283797238817012a37b span_id=f4c9b2881e306554 resource.service.name=Learning Management Service trace_sampled=True] - request_completed backend-1 | INFO: 172.18.0.1:39078 - "GET /items/ HTTP/1.1" 200 OK backend-1 | INFO: 172.18.0.1:39078 - "GET /items/ HTTP/1.1" 200
 
 ![VictoriaLogs UI Query](wiki/images/task3a-victorialogs-query.png)
 
@@ -204,69 +159,13 @@ After running `docker compose stop postgres` and triggering a request to `/items
 
 ## Task 3B — Traces
 
-### Checkpoint Evidence
-
-#### 1. VictoriaTraces UI
-
-**Access:** `http://localhost:42002/utils/victoriatraces/select/vmui`
-
-Traces are ingested via OpenTelemetry from the backend. Each trace contains spans for:
-
-- `request_started` — entry point
-- `auth_success` — authentication span
-- `db_query` — database operation
-- `request_completed` — response sent
-
-#### 2. Healthy trace structure
-
-A healthy trace (trace_id: `048658d6703fff6c24b509471a0fde74`) shows:
-
-```
-Trace: GET /items/
-├── request_started (span: d2bb9d635576564d)
-├── auth_success (span: d2bb9d635576564d)
-├── db_query: select from item (span: d2bb9d635576564d)
-└── request_completed: status 200, duration 3821ms (span: d2bb9d635576564d)
-```
-
-All spans share the same trace_id and show successful completion.
-
 ![Healthy Trace](wiki/images/task3b-healthy-trace.png)
 
-#### 3. Error trace structure
-
-After stopping PostgreSQL, the error trace (trace_id: `f2802dcec1d114bdcb9b075fa93bad45`) shows:
-
-```
-Trace: GET /items/
-├── request_started (span: ac9e19fe0e065e05)
-├── auth_success (span: ac9e19fe0e065e05)
-├── db_query: INFO (span: ac9e19fe0e065e05)
-├── db_query: ERROR - connection is closed (span: ac9e19fe0e065e05) ← FAILURE POINT
-└── request_completed: status 404, duration 1002ms (span: ac9e19fe0e065e05)
-```
-
-The error appears in the second `db_query` span — the trace makes it immediately clear where the failure occurred.
-
 ![Error Trace](wiki/images/task3b-error-trace.png)
-
-#### 4. Log-trace correlation
-
-Logs and traces are correlated via `trace_id`. From an error log:
-
-```json
-{"trace_id":"f2802dcec1d114bdcb9b075fa93bad45", "severity":"ERROR", "error":"connection is closed", ...}
-```
-
-You can fetch the full trace using that ID to see the complete request flow.
 
 ---
 
 ## Task 3C — Observability MCP tools
-
-### Checkpoint Evidence
-
-#### 1. New MCP tools
 
 I added four observability tools to the MCP server:
 
@@ -275,14 +174,10 @@ I added four observability tools to the MCP server:
 - **`traces_list`** — lists recent traces, optionally filtered by service name. Accepts `service`, `limit` (default 10), and `time_range` (default "1h").
 - **`traces_get`** — fetches a specific trace by ID. Requires `trace_id`.
 
-#### 2. Files created/modified
-
 - **`mcp/mcp_lms/client.py`** — added `ObservabilityClient` class with methods for querying VictoriaLogs and VictoriaTraces APIs.
 - **`mcp/mcp_lms/server.py`** — added tool handlers and registered all four observability tools.
 - **`nanobot/config.json`** — added `NANOBOT_VICTORIALOGS_URL` and `NANOBOT_VICTORIATRACES_URL` environment variables.
 - **`nanobot/workspace/skills/observability/SKILL.md`** — created observability skill prompt teaching the agent how to use the new tools.
-
-#### 3. Testing the tools
 
 **Normal conditions (all services healthy):**
 
@@ -303,8 +198,6 @@ The agent's behavior followed the expected pattern:
 3. Extracted the `trace_id` from error logs and offered to fetch the full trace with `traces_get`
 4. Summarized findings concisely without dumping raw JSON
 
-#### 4. Observability skill prompt
-
 The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent to:
 
 1. **Start with `logs_error_count`** for quick health assessment
@@ -312,8 +205,6 @@ The skill at `nanobot/workspace/skills/observability/SKILL.md` teaches the agent
 3. **Extract `trace_id`** from error logs and fetch full traces with `traces_get`
 4. **Summarize findings** concisely — don't dump raw JSON
 5. **Use appropriate time ranges** — "1h" for recent, "24h" or "7d" for historical
-
-#### 5. LogsQL query patterns
 
 - `*` — All logs
 - `level:error` — Error-level logs
